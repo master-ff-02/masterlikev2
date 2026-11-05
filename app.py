@@ -20,7 +20,6 @@
 # ╚══════════════════════════════════════════════════════════════════════╝
 #
 
-
 from flask import Flask, request, jsonify
 import asyncio
 from Crypto.Cipher import AES
@@ -30,6 +29,7 @@ import binascii
 import aiohttp
 import requests
 import json
+import time  # ⭐ NAYA ADD KIYA
 import like_pb2
 import uid_generator_pb2
 import visit_count_pb2
@@ -45,7 +45,6 @@ ZEXXY_BANNER = r"""
    ║              © Zexxy — All Rights Reserved                ║
    ╚══════════════════════════════════════════════════════════╝
 """
-
 
 # ═══════════════════════════════════════════════════════════════
 #   TOKEN LOADER
@@ -66,7 +65,6 @@ def zexxyh4x_load_tokens(region):
         app.logger.error(f"[Zexxy] Error loading tokens for region {region}: {e}")
         return None
 
-
 # ═══════════════════════════════════════════════════════════════
 #   AES ENCRYPTION
 # ═══════════════════════════════════════════════════════════════
@@ -82,7 +80,6 @@ def zexxyh4x_encrypt_message(plaintext):
         app.logger.error(f"[Zexxy] Error encrypting message: {e}")
         return None
 
-
 # ═══════════════════════════════════════════════════════════════
 #   PROTOBUF (LIKE)
 # ═══════════════════════════════════════════════════════════════
@@ -95,7 +92,6 @@ def zexxyh4x_create_protobuf_message(user_id, region):
     except Exception as e:
         app.logger.error(f"[Zexxy] Error creating protobuf message: {e}")
         return None
-
 
 # ═══════════════════════════════════════════════════════════════
 #   ASYNC SEND REQUEST
@@ -124,7 +120,6 @@ async def zexxyh4x_send_request(encrypted_uid, token, url):
         app.logger.error(f"[Zexxy] Exception in send_request: {e}")
         return None
 
-
 # ═══════════════════════════════════════════════════════════════
 #   MULTIPLE REQUESTS (Likes)
 # ═══════════════════════════════════════════════════════════════
@@ -152,7 +147,6 @@ async def zexxyh4x_send_multiple_requests(uid, region, url):
         app.logger.error(f"[Zexxy] Exception in send_multiple_requests: {e}")
         return None
 
-
 # ═══════════════════════════════════════════════════════════════
 #   UID PROTOBUF BUILDER
 # ═══════════════════════════════════════════════════════════════
@@ -166,13 +160,11 @@ def zexxyh4x_create_protobuf(uid):
         app.logger.error(f"[Zexxy] Error creating UID protobuf: {e}")
         return None
 
-
 def zexxyh4x_enc(uid):
     protobuf_data = zexxyh4x_create_protobuf(uid)
     if protobuf_data is None:
         return None
     return zexxyh4x_encrypt_message(protobuf_data)
-
 
 # ═══════════════════════════════════════════════════════════════
 #   MAKE REQUEST (GetPlayerPersonalShow)
@@ -208,7 +200,6 @@ def zexxyh4x_make_request(encrypt, region, token):
         app.logger.error(f"[Zexxy] Error in make_request: {e}")
         return None
 
-
 # ═══════════════════════════════════════════════════════════════
 #   DECODE PROTOBUF
 # ═══════════════════════════════════════════════════════════════
@@ -223,7 +214,6 @@ def zexxyh4x_decode_protobuf(binary):
     except Exception as e:
         app.logger.error(f"[Zexxy] Unexpected decode error: {e}")
         return None
-
 
 # ═══════════════════════════════════════════════════════════════
 #   MAIN ROUTE — /like
@@ -272,6 +262,9 @@ def zexxyh4x_handle_requests():
             # --- Send likes ---
             asyncio.run(zexxyh4x_send_multiple_requests(uid, region, url))
 
+            # ⭐⭐⭐ YAHAN DELAY ADD KIYA HAI ⭐⭐⭐
+            time.sleep(3)
+
             # --- Fetch player info AFTER sending likes ---
             after = zexxyh4x_make_request(encrypted_uid, region, token)
             if after is None:
@@ -286,7 +279,7 @@ def zexxyh4x_handle_requests():
             after_like   = int(acct_after.get('Likes', 0))
             player_uid   = int(acct_after.get('UID', 0))
             player_name  = str(acct_after.get('PlayerNickname', ''))
-            player_region = str(acct_after.get('PlayerRegion', region))   # ⭐ Player region (fallback to requested region)
+            player_region = str(acct_after.get('PlayerRegion', region))
             try:
                 player_level = int(acct_after.get('Levels', 0))
             except Exception:
@@ -301,7 +294,7 @@ def zexxyh4x_handle_requests():
                 "LikesbeforeCommand":  before_like,
                 "PlayerNickname":      player_name,
                 "Level":               player_level,
-                "Region":              player_region,   # ⭐ NEW
+                "Region":              player_region,
                 "UID":                 player_uid,
                 "status":              status,
                 "credit":              "MasteR"
@@ -317,7 +310,6 @@ def zexxyh4x_handle_requests():
     except Exception as e:
         app.logger.error(f"[Zexxy] Error processing request: {e}")
         return jsonify({"error": str(e)}), 500
-
 
 # ═══════════════════════════════════════════════════════════════
 #   START SERVER
