@@ -29,7 +29,8 @@ import binascii
 import aiohttp
 import requests
 import json
-import time  # ⭐ NAYA ADD KIYA
+import random
+import time
 import like_pb2
 import uid_generator_pb2
 import visit_count_pb2
@@ -37,14 +38,6 @@ from google.protobuf.message import DecodeError
 
 app = Flask(__name__)
 app.json.sort_keys = False
-
-ZEXXY_BANNER = r"""
-   ╔══════════════════════════════════════════════════════════╗
-   ║              ⚡  Z E X X Y   A P I  ⚡                    ║
-   ║              Like Sender — Zexxy Edition 💦               ║
-   ║              © Zexxy — All Rights Reserved                ║
-   ╚══════════════════════════════════════════════════════════╝
-"""
 
 # ═══════════════════════════════════════════════════════════════
 #   TOKEN LOADER
@@ -112,13 +105,9 @@ async def zexxyh4x_send_request(encrypted_uid, token, url):
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(url, data=edata, headers=headers) as response:
-                if response.status != 200:
-                    app.logger.error(f"[Zexxy] Request failed with status: {response.status}")
-                    return response.status
-                return await response.text()
-    except Exception as e:
-        app.logger.error(f"[Zexxy] Exception in send_request: {e}")
-        return None
+                return response.status
+    except Exception:
+        return 500
 
 # ═══════════════════════════════════════════════════════════════
 #   MULTIPLE REQUESTS (Likes)
@@ -126,26 +115,15 @@ async def zexxyh4x_send_request(encrypted_uid, token, url):
 async def zexxyh4x_send_multiple_requests(uid, region, url):
     try:
         protobuf_message = zexxyh4x_create_protobuf_message(uid, region)
-        if protobuf_message is None:
-            app.logger.error("[Zexxy] Failed to create protobuf message.")
-            return None
         encrypted_uid = zexxyh4x_encrypt_message(protobuf_message)
-        if encrypted_uid is None:
-            app.logger.error("[Zexxy] Encryption failed.")
-            return None
         tasks = []
         tokens = zexxyh4x_load_tokens(region)
-        if tokens is None:
-            app.logger.error("[Zexxy] Failed to load tokens.")
-            return None
         for i in range(220):
             token = tokens[i % len(tokens)]["token"]
             tasks.append(zexxyh4x_send_request(encrypted_uid, token, url))
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        return results
+        await asyncio.gather(*tasks, return_exceptions=True)
     except Exception as e:
         app.logger.error(f"[Zexxy] Exception in send_multiple_requests: {e}")
-        return None
 
 # ═══════════════════════════════════════════════════════════════
 #   UID PROTOBUF BUILDER
@@ -156,8 +134,7 @@ def zexxyh4x_create_protobuf(uid):
         message.saturn_ = int(uid)
         message.garena = 1
         return message.SerializeToString()
-    except Exception as e:
-        app.logger.error(f"[Zexxy] Error creating UID protobuf: {e}")
+    except Exception:
         return None
 
 def zexxyh4x_enc(uid):
@@ -189,15 +166,10 @@ def zexxyh4x_make_request(encrypt, region, token):
             'X-GA': "v1 1",
             'ReleaseVersion': "OB55"
         }
-        response = requests.post(url, data=edata, headers=headers, verify=False)
-        hex_data = response.content.hex()
-        binary = bytes.fromhex(hex_data)
-        decode = zexxyh4x_decode_protobuf(binary)
-        if decode is None:
-            app.logger.error("[Zexxy] Protobuf decoding returned None.")
-        return decode
+        response = requests.post(url, data=edata, headers=headers, verify=False, timeout=15)
+        binary = response.content
+        return zexxyh4x_decode_protobuf(binary)
     except Exception as e:
-        app.logger.error(f"[Zexxy] Error in make_request: {e}")
         return None
 
 # ═══════════════════════════════════════════════════════════════
@@ -208,11 +180,7 @@ def zexxyh4x_decode_protobuf(binary):
         items = visit_count_pb2.Info()
         items.ParseFromString(binary)
         return items
-    except DecodeError as e:
-        app.logger.error(f"[Zexxy] Error decoding protobuf: {e}")
-        return None
-    except Exception as e:
-        app.logger.error(f"[Zexxy] Unexpected decode error: {e}")
+    except Exception:
         return None
 
 # ═══════════════════════════════════════════════════════════════
@@ -226,87 +194,73 @@ def zexxyh4x_handle_requests():
         return jsonify({"error": "UID and region are required"}), 400
 
     try:
-        def zexxyh4x_process_request():
-            tokens = zexxyh4x_load_tokens(region)
-            if tokens is None:
-                raise Exception("Failed to load tokens.")
-            token = tokens[0]['token']
-            encrypted_uid = zexxyh4x_enc(uid)
-            if encrypted_uid is None:
-                raise Exception("Encryption of UID failed.")
+        tokens = zexxyh4x_load_tokens(region)
+        if not tokens:
+            return jsonify({"error": "Failed to load tokens."}), 500
 
-            # --- Fetch player info BEFORE sending likes ---
-            before = zexxyh4x_make_request(encrypted_uid, region, token)
-            if before is None:
-                raise Exception("Failed to retrieve initial player info.")
-            try:
-                jsone = MessageToJson(before)
-            except Exception as e:
-                raise Exception(f"Error converting 'before' protobuf to JSON: {e}")
-            data_before = json.loads(jsone)
-            before_like = data_before.get('AccountInfo', {}).get('Likes', 0)
-            try:
-                before_like = int(before_like)
-            except Exception:
-                before_like = 0
-            app.logger.info(f"[Zexxy] Likes before command: {before_like}")
+        # ⭐ FIX: Random token use karo taaki rate-limit na ho
+        token = random.choice(tokens)['token']
+        
+        encrypted_uid = zexxyh4x_enc(uid)
+        if encrypted_uid is None:
+            return jsonify({"error": "Encryption of UID failed."}), 500
 
-            # --- Like endpoint URL ---
-            if region == "IND":
-                url = "https://client.ind.freefiremobile.com/LikeProfile"
-            elif region in {"BR", "US", "SAC", "NA"}:
-                url = "https://client.us.freefiremobile.com/LikeProfile"
-            else:
-                url = "https://clientbp.ppmainecoonghj.com/LikeProfile"
+        # --- Fetch player info BEFORE sending likes ---
+        before = zexxyh4x_make_request(encrypted_uid, region, token)
+        if before is None:
+            return jsonify({"error": "Invalid UID or server", "status": 0}), 200
 
-            # --- Send likes ---
-            asyncio.run(zexxyh4x_send_multiple_requests(uid, region, url))
+        jsone = MessageToJson(before)
+        data_before = json.loads(jsone)
+        before_like = int(data_before.get('AccountInfo', {}).get('Likes', 0))
 
-            # ⭐⭐⭐ YAHAN DELAY ADD KIYA HAI ⭐⭐⭐
-            time.sleep(3)
+        # --- Like endpoint URL ---
+        if region == "IND":
+            url = "https://client.ind.freefiremobile.com/LikeProfile"
+        elif region in {"BR", "US", "SAC", "NA"}:
+            url = "https://client.us.freefiremobile.com/LikeProfile"
+        else:
+            url = "https://clientbp.ppmainecoonghj.com/LikeProfile"
 
-            # --- Fetch player info AFTER sending likes ---
-            after = zexxyh4x_make_request(encrypted_uid, region, token)
-            if after is None:
-                raise Exception("Failed to retrieve player info after like requests.")
-            try:
-                jsone_after = MessageToJson(after)
-            except Exception as e:
-                raise Exception(f"Error converting 'after' protobuf to JSON: {e}")
-            data_after = json.loads(jsone_after)
+        # --- Send likes ---
+        asyncio.run(zexxyh4x_send_multiple_requests(uid, region, url))
 
-            acct_after   = data_after.get('AccountInfo', {})
-            after_like   = int(acct_after.get('Likes', 0))
-            player_uid   = int(acct_after.get('UID', 0))
-            player_name  = str(acct_after.get('PlayerNickname', ''))
-            player_region = str(acct_after.get('PlayerRegion', region))
-            try:
-                player_level = int(acct_after.get('Levels', 0))
-            except Exception:
-                player_level = 0
+        # ⭐⭐⭐ YAHAN 5 SECOND KA DELAY ADD KIYA HAI ⭐⭐⭐
+        time.sleep(5)
 
-            like_given = after_like - before_like
-            status = 1 if like_given != 0 else 2
+        # --- Fetch player info AFTER sending likes ---
+        after = zexxyh4x_make_request(encrypted_uid, region, token)
+        if after is None:
+            return jsonify({"error": "Failed to retrieve player info after like requests."}), 500
 
-            result = {
-                "LikesGivenByAPI":     like_given,
-                "LikesafterCommand":   after_like,
-                "LikesbeforeCommand":  before_like,
-                "PlayerNickname":      player_name,
-                "Level":               player_level,
-                "Region":              player_region,
-                "UID":                 player_uid,
-                "status":              status,
-                "credit":              "MasteR"
-            }
-            return result
+        jsone_after = MessageToJson(after)
+        data_after = json.loads(jsone_after)
 
-        result = zexxyh4x_process_request()
-        return app.response_class(
-            response=json.dumps(result),
-            status=200,
-            mimetype='application/json'
-        )
+        acct_after = data_after.get('AccountInfo', {})
+        after_like = int(acct_after.get('Likes', 0))
+        player_uid = int(acct_after.get('UID', 0))
+        player_name = str(acct_after.get('PlayerNickname', ''))
+        player_region = str(acct_after.get('PlayerRegion', region))
+        try:
+            player_level = int(acct_after.get('Levels', 0))
+        except:
+            player_level = 0
+
+        like_given = after_like - before_like
+        status = 1 if like_given != 0 else 2
+
+        return jsonify({
+            "LikesGivenByAPI": like_given,
+            "LikesafterCommand": after_like,
+            "LikesbeforeCommand": before_like,
+            "PlayerNickname": player_name,
+            "Level": player_level,
+            "Region": player_region,
+            "UID": player_uid,
+            "status": status,
+            "credit": "MasteR"
+        })
+
     except Exception as e:
         app.logger.error(f"[Zexxy] Error processing request: {e}")
         return jsonify({"error": str(e)}), 500
@@ -315,5 +269,5 @@ def zexxyh4x_handle_requests():
 #   START SERVER
 # ═══════════════════════════════════════════════════════════════
 if __name__ == '__main__':
-    print(ZEXXY_BANNER)
+    print("🚀 MASTER API STARTED")
     app.run(debug=True, use_reloader=False)
